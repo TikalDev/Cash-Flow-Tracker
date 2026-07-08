@@ -73,9 +73,9 @@
   .chk{width:26px; height:26px; padding:0; border-radius:6px; border:1px solid var(--border);
     background:var(--surface); cursor:pointer; font-size:14px; color:var(--muted);}
   .chk.on{background:var(--green-bg); border-color:var(--green-bd); color:var(--green);}
-  .nm{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .nm{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1;}
   .nm.paid{text-decoration:line-through; color:var(--muted);}
-  .editbtn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:0 4px; opacity:.6;}
+  .editbtn{flex:none; background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; padding:2px 6px; opacity:.6;}
   .editbtn:hover{opacity:1; color:var(--accent);}
   .drawerhdr{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 6px; font-weight:600;}
   .draweritem{display:block; width:100%; text-align:left; background:none; border:none; padding:11px 10px; font-size:15px; color:var(--text); cursor:pointer; border-radius:8px;}
@@ -130,6 +130,7 @@
   <button class="draweritem" id="feedbackBtn">Send feedback / request a feature</button>
   <p class="drawerhdr">Start over</p>
   <button class="draweritem danger" id="resetBtn">Reset all</button>
+  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v16</span></p>
 </nav>
 <div class="wrap">
   <h1>Cash Flow Tracker</h1>
@@ -223,6 +224,7 @@
 if (window.pdfjsLib) { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
 
 const KEY = "cashflow_multi_v1";
+const APP_VERSION = "v16";
 const DAY = 864e5;
 const fmt = (v)=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmt0 = (v)=>(v<0?"-":"")+"$"+Math.abs(Math.round(v)).toLocaleString();
@@ -638,7 +640,7 @@ function render(){
     const balTxt=isPaid?"paid":(fmt0(bal)+(bal<0?" !":(short?" *":"")));
     html+='<div class="row '+(isPaid?'paid':'')+'">'+
       '<button class="chk '+(isPaid?'on':'')+'" data-key="'+o.key+'" data-id="'+o.id+'">✓</button>'+
-      '<div style="min-width:0;"><div class="nm '+(isPaid?'paid':'')+'">'+o.n+' <button class="editbtn" data-edit="'+o.id+'" title="Edit">✎</button></div><div class="dt">'+dstr+'</div></div>'+
+      '<div style="min-width:0;"><div style="display:flex; align-items:center; gap:2px;"><span class="nm '+(isPaid?'paid':'')+'">'+o.n+'</span><button class="editbtn" data-edit="'+o.id+'" title="Edit">✎</button></div><div class="dt">'+dstr+'</div></div>'+
       '<div class="amt '+(isPaid?'muted':(isIn?'in':'out'))+'">'+(isIn?"+":"−")+fmt(o.a)+'</div>'+
       '<div class="bal '+balCls+'">'+balTxt+'</div></div>';
   });
@@ -835,6 +837,7 @@ document.getElementById("drawerClose").onclick=closeDrawer;
 document.getElementById("drawerScrim").onclick=closeDrawer;
 
 /* ---------------- BOOT ---------------- */
+document.getElementById("verNum").textContent=APP_VERSION;
 load();
 if(state && state.accounts && state.accounts.length){ cur=state.accounts[0]; show("trackerScreen"); buildTabs(); syncBalInput(); render(); }
 else { show("importScreen"); }
