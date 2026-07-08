@@ -123,6 +123,8 @@
   <button class="draweritem" id="reimportBtn">Import statements</button>
   <button class="draweritem" id="backupBtn">Back up my data</button>
   <button class="draweritem" id="restoreBtn">Restore from backup</button>
+  <p class="drawerhdr">Feedback</p>
+  <button class="draweritem" id="feedbackBtn">Send feedback / request a feature</button>
   <p class="drawerhdr">Start over</p>
   <button class="draweritem danger" id="resetBtn">Reset all</button>
 </nav>
@@ -369,46 +371,67 @@ function normDesc(d){
     .replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
 }
 function median(arr){ const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+// group a payee's transactions into clusters of similar amount
+function clusterByAmount(entries){
+  // entries: [{amt,date}], sorted by amt
+  const sorted=[...entries].sort((a,b)=>a.amt-b.amt);
+  const clusters=[]; let cur=[];
+  sorted.forEach(e=>{
+    if(!cur.length){ cur=[e]; return; }
+    const med=median(cur.map(x=>x.amt));
+    // same cluster if within 15% (or $5) of the running median
+    if(Math.abs(e.amt-med) <= Math.max(5, med*0.15)){ cur.push(e); }
+    else { clusters.push(cur); cur=[e]; }
+  });
+  if(cur.length) clusters.push(cur);
+  return clusters;
+}
 function detectRecurring(files){
-  const groups={}; // key: account||normDesc -> {account,name,amts:[],dates:[],sign}
+  const groups={}; // key: account||normDesc -> {account,name,entries:[{amt,date}],sign}
   files.forEach(f=>{
     f.txns.forEach(t=>{
       const nd=normDesc(t.desc); if(nd.length<3) return;
       const key=f.account+"||"+nd;
-      const g=groups[key]||(groups[key]={account:f.account, name:cleanName(t.desc), amts:[], dates:[], sign:Math.sign(t.amt)});
-      g.amts.push(Math.abs(t.amt)); g.dates.push(t.date);
+      const g=groups[key]||(groups[key]={account:f.account, name:cleanName(t.desc), entries:[], sign:Math.sign(t.amt)});
+      g.entries.push({amt:Math.abs(t.amt), date:t.date});
     });
   });
   const rows=[];
+  const today=new Date(); today.setHours(0,0,0,0);
   Object.values(groups).forEach(g=>{
-    // recurring if appears in >=2 distinct months OR >=3 times
-    const monthsSeen=new Set(g.dates.map(d=>d.getFullYear()+"-"+d.getMonth())).size;
-    if(g.dates.length<2 || (monthsSeen<2 && g.dates.length<3)) return;
-    // amount consistency: use median; skip if wildly variable (likely groceries/dining)
-    const med=median(g.amts);
-    const within=g.amts.filter(a=>Math.abs(a-med)<=Math.max(5, med*0.15)).length;
-    if(within/g.amts.length < 0.5) return; // too variable -> not a fixed recurring bill
-    // frequency from median gap
-    const sorted=[...g.dates].sort((a,b)=>a-b);
-    const gaps=[]; for(let i=1;i<sorted.length;i++) gaps.push((sorted[i]-sorted[i-1])/DAY);
-    const g0=gaps.length?median(gaps):30;
-    let freq="monthly";
-    if(g0>=11 && g0<=17) freq="biweekly";
-    else if(g0>=25 && g0<=35) freq="monthly";
-    else if(g0<11) freq="semi";
-    const last=sorted[sorted.length-1];
-    // next date
-    let next=new Date(last);
-    const today=new Date(); today.setHours(0,0,0,0);
-    if(freq==="biweekly"){ while(next<today) next=new Date(next.getTime()+14*DAY); }
-    else { while(next<today){ next=new Date(next.getFullYear(), next.getMonth()+1, next.getDate()); } }
-    rows.push({
-      use:true, name:g.name, type: g.sign>0?"in":"out",
-      amt: Math.round(med*100)/100, account:g.account, freq,
-      day: last.getDate(), anchor: iso(last), next: iso(next),
+    // split this payee into amount-clusters, evaluate each separately
+    const clusters=clusterByAmount(g.entries);
+    clusters.forEach(cl=>{
+      const dates=cl.map(e=>e.date);
+      const amts=cl.map(e=>e.amt);
+      const monthsSeen=new Set(dates.map(d=>d.getFullYear()+"-"+d.getMonth())).size;
+      // recurring if this cluster appears in >=2 months OR >=3 times
+      if(dates.length<2 || (monthsSeen<2 && dates.length<3)) return;
+      const med=median(amts);
+      const within=amts.filter(a=>Math.abs(a-med)<=Math.max(5, med*0.15)).length;
+      if(within/amts.length < 0.6) return;
+      // Noise filter: small everyday card purchases can repeat by coincidence.
+      // Keep a small card-type item only if it recurs across most months.
+      const looksLikeCardPurchase=/purchase|interac|contactless|pos |point of sale|debit retail/i.test(g.name);
+      if(med < 100 && looksLikeCardPurchase && monthsSeen < 3) return;
+      const sorted=[...dates].sort((a,b)=>a-b);
+      const gaps=[]; for(let i=1;i<sorted.length;i++) gaps.push((sorted[i]-sorted[i-1])/DAY);
+      const g0=gaps.length?median(gaps):30;
+      let freq="monthly";
+      if(g0>=11 && g0<=17) freq="biweekly";
+      else if(g0>=25 && g0<=35) freq="monthly";
+      else if(g0<11) freq="semi";
+      const last=sorted[sorted.length-1];
+      let next=new Date(last);
+      if(freq==="biweekly"){ while(next<today) next=new Date(next.getTime()+14*DAY); }
+      else { while(next<today){ next=new Date(next.getFullYear(), next.getMonth()+1, next.getDate()); } }
+      rows.push({
+        use:true, name:g.name, type: g.sign>0?"in":"out",
+        amt: Math.round(med*100)/100, account:g.account, freq,
+        day: last.getDate(), anchor: iso(last), next: iso(next),
+      });
     });
   });
-  // sort: income first, then by amount desc
   rows.sort((a,b)=> (a.type===b.type? b.amt-a.amt : (a.type==="in"?-1:1)));
   return rows;
 }
@@ -788,6 +811,7 @@ document.getElementById("undoBtn").onclick=doUndo;
 document.getElementById("undoBtn2").onclick=doUndo;
 document.getElementById("backupBtn").onclick=()=>{ closeDrawer(); backupData(); };
 document.getElementById("restoreBtn").onclick=()=>{ closeDrawer(); document.getElementById("restoreFile").click(); };
+document.getElementById("feedbackBtn").onclick=()=>{ closeDrawer(); window.open("https://docs.google.com/forms/d/e/1FAIpQLSchvp00o375WyLc2jHZ3RyH38Z44CIN4PHcjeXEefDpF10Qbg/viewform","_blank"); };
 document.getElementById("restoreFile").addEventListener("change",e=>{ if(e.target.files[0]) restoreData(e.target.files[0]); e.target.value=""; });
 
 document.getElementById("menuBtn").onclick=openDrawer;
