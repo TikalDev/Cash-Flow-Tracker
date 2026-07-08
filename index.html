@@ -432,22 +432,29 @@ document.getElementById("populateBtn").onclick=()=>{
   const chosen=detected.filter(r=>r.use);
   const accts=[...new Set(chosen.map(r=>r.account))];
   if(!accts.length){ document.getElementById("reviewStatus").textContent="Tick at least one item, or go back and set up manually."; return; }
-  state={accounts:accts, items:[], bal:{}, buffer:{}, paid:{}};
-  accts.forEach(a=>{ state.bal[a]=0; state.buffer[a]=0; state.paid[a]=[]; });
+  // MERGE into existing setup if there is one; otherwise start fresh.
+  if(!state || !state.accounts){ state={accounts:[], items:[], bal:{}, buffer:{}, paid:{}}; }
+  accts.forEach(a=>{
+    if(!state.accounts.includes(a)) state.accounts.push(a);
+    if(state.bal[a]===undefined) state.bal[a]=0;
+    if(state.buffer[a]===undefined) state.buffer[a]=0;
+    if(!state.paid[a]) state.paid[a]=[];
+  });
   chosen.forEach((r,i)=>{
     const it={id:"i"+i+"_"+Date.now(), n:r.name, a:Math.abs(r.amt), t:r.type, freq:r.freq, account:r.account};
     if(r.freq==="biweekly"){ it.anchor=r.anchor||r.next; }
     else { it.day=parseISO(r.next).getDate(); }
     state.items.push(it);
   });
-  cur=accts[0];
-  save(); show("trackerScreen"); buildTabs(); render();
+  cur=cur && state.accounts.includes(cur) ? cur : accts[0];
+  save(); show("trackerScreen"); buildTabs(); syncBalInput(); render();
 };
 document.getElementById("skipBtn").onclick=()=>{
+  if(state && state.accounts && state.accounts.length){ show("trackerScreen"); buildTabs(); syncBalInput(); render(); return; }
   state={accounts:["Account 1"], items:[], bal:{"Account 1":0}, buffer:{"Account 1":0}, paid:{"Account 1":[]}};
-  cur="Account 1"; save(); show("trackerScreen"); buildTabs(); render();
+  cur="Account 1"; save(); show("trackerScreen"); buildTabs(); syncBalInput(); render();
 };
-document.getElementById("reimportBtn").onclick=()=>{ pending=[]; detected=[]; renderFileList(); show("importScreen"); };
+document.getElementById("reimportBtn").onclick=()=>{ pending=[]; detected=[]; renderFileList(); document.getElementById("importStatus").textContent = (state&&state.accounts&&state.accounts.length)? "Adding to your existing setup ("+state.accounts.join(", ")+"). New imports won't erase what's there." : ""; show("importScreen"); };
 
 /* ---------------- TRACKER (multi-account) ---------------- */
 function show(id){ ["importScreen","reviewScreen","trackerScreen"].forEach(s=>document.getElementById(s).classList.toggle("hide", s!==id)); }
