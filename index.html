@@ -161,6 +161,8 @@
     <div class="btnrow">
       <button class="btn" id="addBtn">+ Add item</button>
       <button class="btn" id="buffBtn">Set buffer</button>
+      <button class="btn" id="renameAcctBtn">Rename account</button>
+      <button class="btn" id="delAcctBtn">Delete account</button>
       <button class="btn" id="reimportBtn">Import statements</button>
       <button class="btn danger" id="resetBtn">Reset all</button>
     </div>
@@ -648,6 +650,33 @@ document.getElementById("saveItem").onclick=()=>{
 document.getElementById("buffBtn").onclick=()=>{
   const v=prompt("Safety buffer for "+cur+" — warn when balance would drop below this:", String(state.buffer[cur]||0));
   if(v!==null){ state.buffer[cur]=parseFloat(v)||0; save(); render(); }
+};
+document.getElementById("renameAcctBtn").onclick=()=>{
+  const nn=prompt("Rename this account:", cur);
+  if(nn===null) return;
+  const name=nn.trim();
+  if(!name){ document.getElementById("status").textContent="Name can't be empty."; return; }
+  if(name===cur){ return; }
+  if(state.accounts.includes(name)){ document.getElementById("status").textContent="An account named \""+name+"\" already exists."; return; }
+  const old=cur;
+  state.accounts=state.accounts.map(a=>a===old?name:a);
+  state.items.forEach(it=>{ if(it.account===old) it.account=name; });
+  state.bal[name]=state.bal[old]; delete state.bal[old];
+  state.buffer[name]=state.buffer[old]; delete state.buffer[old];
+  state.paid[name]=state.paid[old]||[]; delete state.paid[old];
+  cur=name; save(); buildTabs(); syncBalInput(); render();
+  document.getElementById("status").textContent="Renamed to "+name+".";
+};
+document.getElementById("delAcctBtn").onclick=()=>{
+  if(state.accounts.length<=1){ document.getElementById("status").textContent="Can't delete your only account. Use Reset all instead."; return; }
+  if(!confirm('Delete the "'+cur+'" account and all its items, balance, and settings? This cannot be undone.')) return;
+  const gone=cur;
+  state.accounts=state.accounts.filter(a=>a!==gone);
+  state.items=state.items.filter(it=>it.account!==gone);
+  delete state.bal[gone]; delete state.buffer[gone]; delete state.paid[gone];
+  cur=state.accounts[0];
+  save(); buildTabs(); syncBalInput(); render();
+  document.getElementById("status").textContent='Deleted "'+gone+'".';
 };
 document.getElementById("resetBtn").onclick=()=>{
   if(confirm("Erase everything and start over? This clears all accounts, items, and balances on this device.")){
