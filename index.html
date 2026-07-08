@@ -74,6 +74,8 @@
   .chk.on{background:var(--green-bg); border-color:var(--green-bd); color:var(--green);}
   .nm{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .nm.paid{text-decoration:line-through; color:var(--muted);}
+  .editbtn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:0 4px; opacity:.6;}
+  .editbtn:hover{opacity:1; color:var(--accent);}
   .dt{font-size:11px; color:var(--muted);}
   .amt{font-size:14px; text-align:right; white-space:nowrap;}
   .amt.in{color:var(--green);} .amt.out{color:var(--text);} .amt.muted{color:var(--muted);}
@@ -149,6 +151,7 @@
       <button class="btn danger" id="resetBtn">Reset all</button>
     </div>
     <div class="addform" id="addForm">
+      <p class="sectionttl" id="addFormTitle" style="font-size:14px; margin:0 0 10px;">Add item</p>
       <div class="g">
         <input id="nName" type="text" placeholder="Name" />
         <input id="nAmt" type="number" step="0.01" placeholder="Amount" />
@@ -158,8 +161,9 @@
         <input id="nAnchor" type="date" class="hide" />
       </div>
       <div class="btnrow" style="margin-top:10px; margin-bottom:0;">
-        <button class="btn" id="saveItem">Save</button>
+        <button class="btn primary" id="saveItem">Save</button>
         <button class="btn" id="cancelItem">Cancel</button>
+        <button class="btn danger hide" id="delItem">Delete</button>
       </div>
     </div>
     <div id="rows"></div>
@@ -482,7 +486,7 @@ function render(){
     const balTxt=isPaid?"paid":(fmt0(bal)+(bal<0?" !":(short?" *":"")));
     html+='<div class="row '+(isPaid?'paid':'')+'">'+
       '<button class="chk '+(isPaid?'on':'')+'" data-key="'+o.key+'" data-id="'+o.id+'">✓</button>'+
-      '<div style="min-width:0;"><div class="nm '+(isPaid?'paid':'')+'">'+o.n+'</div><div class="dt">'+dstr+'</div></div>'+
+      '<div style="min-width:0;"><div class="nm '+(isPaid?'paid':'')+'">'+o.n+' <button class="editbtn" data-edit="'+o.id+'" title="Edit">✎</button></div><div class="dt">'+dstr+'</div></div>'+
       '<div class="amt '+(isPaid?'muted':(isIn?'in':'out'))+'">'+(isIn?"+":"−")+fmt(o.a)+'</div>'+
       '<div class="bal '+balCls+'">'+balTxt+'</div></div>';
   });
@@ -502,22 +506,62 @@ function render(){
       state.paid[cur]=[...pset]; document.getElementById("curBal").value=state.bal[cur].toFixed(2); save(); render();
     };
   });
+  document.querySelectorAll(".editbtn").forEach(b=>{ b.onclick=()=>openEdit(b.dataset.edit); });
   save();
 }
+
+let editingId=null;
+function openEdit(id){
+  const it=state.items.find(x=>x.id===id); if(!it) return;
+  editingId=id;
+  document.getElementById("nName").value=it.n;
+  document.getElementById("nAmt").value=it.a;
+  document.getElementById("nType").value=it.t;
+  document.getElementById("nFreq").value=it.freq;
+  document.getElementById("nAnchor").classList.toggle("hide", it.freq!=="biweekly");
+  document.getElementById("nDay").classList.toggle("hide", it.freq==="biweekly");
+  if(it.freq==="biweekly"){ document.getElementById("nAnchor").value=it.anchor||""; }
+  else { document.getElementById("nDay").value=it.day||""; }
+  document.getElementById("saveItem").textContent="Update";
+  document.getElementById("delItem").classList.remove("hide");
+  document.getElementById("addFormTitle").textContent="Edit item";
+  document.getElementById("addForm").classList.add("open");
+  document.getElementById("addForm").scrollIntoView({behavior:"smooth", block:"center"});
+}
+function closeForm(){
+  editingId=null;
+  document.getElementById("nName").value=""; document.getElementById("nAmt").value=""; document.getElementById("nDay").value=""; document.getElementById("nAnchor").value="";
+  document.getElementById("saveItem").textContent="Save";
+  document.getElementById("delItem").classList.add("hide");
+  document.getElementById("addFormTitle").textContent="Add item";
+  document.getElementById("addForm").classList.remove("open");
+}
 document.getElementById("curBal").addEventListener("input", render);
-document.getElementById("addBtn").onclick=()=>document.getElementById("addForm").classList.toggle("open");
-document.getElementById("cancelItem").onclick=()=>document.getElementById("addForm").classList.remove("open");
+document.getElementById("addBtn").onclick=()=>{ if(editingId){ closeForm(); } document.getElementById("addForm").classList.toggle("open"); };
+document.getElementById("cancelItem").onclick=()=>closeForm();
 document.getElementById("nFreq").addEventListener("change",function(){ document.getElementById("nAnchor").classList.toggle("hide",this.value!=="biweekly"); document.getElementById("nDay").classList.toggle("hide",this.value==="biweekly"); });
+document.getElementById("delItem").onclick=()=>{
+  if(editingId && confirm("Delete this item?")){
+    state.items=state.items.filter(x=>x.id!==editingId);
+    closeForm(); save(); render();
+  }
+};
 document.getElementById("saveItem").onclick=()=>{
   const n=document.getElementById("nName").value.trim(); const a=parseFloat(document.getElementById("nAmt").value);
   if(!n||isNaN(a)){ document.getElementById("status").textContent="Enter a name and amount."; return; }
   const freq=document.getElementById("nFreq").value;
-  const it={id:"u"+Date.now(), n, a:Math.abs(a), t:document.getElementById("nType").value, freq, account:cur};
-  if(freq==="biweekly"){ const anc=document.getElementById("nAnchor").value; if(!anc){document.getElementById("status").textContent="Biweekly needs an anchor date."; return;} it.anchor=anc; }
-  else { it.day=parseInt(document.getElementById("nDay").value)||new Date().getDate(); }
-  state.items.push(it);
-  document.getElementById("nName").value=""; document.getElementById("nAmt").value=""; document.getElementById("nDay").value=""; document.getElementById("nAnchor").value="";
-  document.getElementById("addForm").classList.remove("open"); save(); render();
+  const fields={ n, a:Math.abs(a), t:document.getElementById("nType").value, freq, account:cur };
+  if(freq==="biweekly"){ const anc=document.getElementById("nAnchor").value; if(!anc){document.getElementById("status").textContent="Biweekly needs an anchor date."; return;} fields.anchor=anc; fields.day=undefined; }
+  else { fields.day=parseInt(document.getElementById("nDay").value)||new Date().getDate(); fields.anchor=undefined; }
+  if(editingId){
+    const it=state.items.find(x=>x.id===editingId);
+    if(it){ it.n=fields.n; it.a=fields.a; it.t=fields.t; it.freq=fields.freq; it.day=fields.day; it.anchor=fields.anchor; }
+    document.getElementById("status").textContent="Updated "+fields.n+".";
+  } else {
+    state.items.push({id:"u"+Date.now(), ...fields});
+    document.getElementById("status").textContent="Added "+fields.n+".";
+  }
+  closeForm(); save(); render();
 };
 document.getElementById("buffBtn").onclick=()=>{
   const v=prompt("Safety buffer for "+cur+" — warn when balance would drop below this:", String(state.buffer[cur]||0));
