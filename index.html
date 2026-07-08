@@ -259,30 +259,38 @@ function renderFileList(){
 /* ---------------- CSV PARSING ---------------- */
 function parseCSV(file){
   return new Promise((resolve)=>{
-    Papa.parse(file,{header:true, skipEmptyLines:true, complete:(res)=>{
+    Papa.parse(file,{header:true, skipEmptyLines:true, transformHeader:(h)=>h.replace(/^\uFEFF/,"").trim(), complete:(res)=>{
       const rows=res.data; if(!rows.length){resolve([]);return;}
-      const cols=Object.keys(rows[0]).map(c=>c.toLowerCase().trim());
-      const find=(...names)=>{ for(const n of names){ const i=cols.findIndex(c=>c.includes(n)); if(i>=0) return Object.keys(rows[0])[i]; } return null; };
-      const cDate=find("date","posted","transaction date");
-      const cDesc=find("description","details","memo","narration","name","payee");
-      const cAmt=find("amount","value");
-      const cDebit=find("debit","withdrawal","paid out","money out");
-      const cCredit=find("credit","deposit","paid in","money in");
+      const realKeys=Object.keys(rows[0]);
+      const cols=realKeys.map(c=>c.toLowerCase().replace(/^\uFEFF/,"").trim());
+      const find=(...names)=>{ for(const n of names){ const i=cols.findIndex(c=>c.includes(n)); if(i>=0) return realKeys[i]; } return null; };
+      const findExact=(...names)=>{ for(const n of names){ const i=cols.findIndex(c=>c===n); if(i>=0) return realKeys[i]; } return null; };
+      const cDate=find("transaction date","posted date","date");
+      // description: gather ALL columns whose header includes "description"/"details"/"memo"/"narration"/"payee"/"name"
+      const descCols=realKeys.filter((k,idx)=>/desc|detail|memo|narration|payee|^name$|transaction detail/.test(cols[idx]));
+      const cDescSingle=find("description","details","memo","narration","payee","name");
+      // amount: RBC uses "CAD$"; others "amount"/"value"
+      const cAmt=findExact("cad$","amount","value") || find("cad$","amount ","amount","value","net");
+      const cDebit=find("debit","withdrawal","paid out","money out","funds out");
+      const cCredit=find("credit","deposit","paid in","money in","funds in");
       const out=[];
       rows.forEach(r=>{
         const dt=parseDate(cDate?r[cDate]:null); if(!dt) return;
         let amt=0;
-        if(cAmt&&r[cAmt]!==undefined&&r[cAmt]!==""){ amt=num(r[cAmt]); }
+        if(cAmt && r[cAmt]!==undefined && String(r[cAmt]).trim()!==""){ amt=num(r[cAmt]); }
         else if(cDebit||cCredit){ const d=num(cDebit?r[cDebit]:0), c=num(cCredit?r[cCredit]:0); amt = c - d; }
         if(!amt) return;
-        const desc=(cDesc?r[cDesc]:"").toString().trim() || "Transaction";
+        let desc="";
+        if(descCols.length){ desc=descCols.map(k=>(r[k]||"").toString().trim()).filter(Boolean).join(" "); }
+        else if(cDescSingle){ desc=(r[cDescSingle]||"").toString().trim(); }
+        desc=desc.replace(/\s+/g," ").trim() || "Transaction";
         out.push({date:dt, desc, amt});
       });
       resolve(out);
     }, error:()=>resolve([])});
   });
 }
-function num(v){ if(v==null) return 0; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+function num(v){ if(v==null) return 0; let s=String(v).trim(); const neg=/^\(.*\)$/.test(s); s=s.replace(/[()]/g,""); const n=parseFloat(s.replace(/[^0-9.\-]/g,"")); if(isNaN(n))return 0; return neg? -Math.abs(n): n; }
 function parseDate(s){
   if(!s) return null; s=String(s).trim();
   let m;
