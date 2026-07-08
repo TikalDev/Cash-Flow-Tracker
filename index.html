@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#2a78d6" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Cash Flow" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>Cash Flow Tracker</title>
+<style>
+  :root{
+    --bg:#faf9f5; --surface:#fff; --surface-1:#f3f1ea; --border:#e4e2da;
+    --text:#1f1e1c; --text-2:#56544f; --muted:#8a8780;
+    --green:#1a8a55; --green-bg:#e4f4ea; --green-bd:#a9dcc0;
+    --red:#c0392b; --amber:#c9820a; --accent:#2a78d6; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:24px 16px 64px;}
+  .wrap{max-width:820px; margin:0 auto;}
+  h1{font-size:22px; font-weight:600; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px;}
+  .hide{display:none !important;}
+  button{font-family:inherit;}
+  .btn{font-size:13px; padding:9px 15px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text); cursor:pointer;}
+  .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600;}
+  .btn.danger{color:var(--red);}
+  .btn:disabled{opacity:.5; cursor:default;}
+
+  /* Import screen */
+  .drop{border:2px dashed var(--border); border-radius:var(--radius); padding:38px 20px; text-align:center;
+    background:var(--surface); cursor:pointer; transition:border-color .15s,background .15s;}
+  .drop.hot{border-color:var(--accent); background:#f0f6fe;}
+  .drop h2{font-size:16px; margin:0 0 6px;}
+  .drop p{color:var(--muted); font-size:13px; margin:4px 0;}
+  .filelist{margin:16px 0;}
+  .fileitem{display:flex; justify-content:space-between; align-items:center; gap:10px;
+    background:var(--surface-1); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:13px;}
+  .fileitem .meta{color:var(--muted); font-size:12px;}
+  .note{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5;}
+
+  /* Review table */
+  .tblwrap{overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--surface); margin-bottom:16px;}
+  table{border-collapse:collapse; width:100%; min-width:720px;}
+  th,td{padding:8px 10px; text-align:left; font-size:13px; border-bottom:1px solid var(--border); white-space:nowrap;}
+  th{background:var(--surface-1); color:var(--text-2); font-weight:600; position:sticky; top:0;}
+  td input,td select{font-size:13px; padding:5px 6px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--text);}
+  td input[type=text]{width:150px;} td input[type=number]{width:90px;} td input[type=date]{width:140px;}
+  .rowoff{opacity:.4;}
+
+  /* Tracker */
+  .tabs{display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;}
+  .tab{font-size:14px; padding:8px 15px; border-radius:10px; border:1.5px solid var(--border);
+    background:var(--surface); color:var(--text); cursor:pointer;}
+  .tab.active{border-color:var(--accent); border-width:2px; font-weight:600;}
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px;}
+  .card{background:var(--surface-1); border-radius:var(--radius); padding:16px;}
+  .card .lbl{font-size:13px; color:var(--text-2); margin:0 0 4px;}
+  .card .big{font-size:22px; font-weight:500; margin:0;}
+  .card .cnote{font-size:11px; color:var(--muted); margin:4px 0 0;}
+  .card input{font-size:22px; font-weight:500; width:100%; border:none; background:transparent; padding:0; color:var(--text);}
+  .card input:focus{outline:none;}
+  .btnrow{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  .monthhdr{font-size:12px; color:var(--muted); font-weight:600; margin:16px 0 6px;}
+  .row{display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center;
+    padding:9px 4px; border-bottom:1px solid var(--border);}
+  .row.paid{opacity:.6;}
+  .chk{width:26px; height:26px; padding:0; border-radius:6px; border:1px solid var(--border);
+    background:var(--surface); cursor:pointer; font-size:14px; color:var(--muted);}
+  .chk.on{background:var(--green-bg); border-color:var(--green-bd); color:var(--green);}
+  .nm{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .nm.paid{text-decoration:line-through; color:var(--muted);}
+  .dt{font-size:11px; color:var(--muted);}
+  .amt{font-size:14px; text-align:right; white-space:nowrap;}
+  .amt.in{color:var(--green);} .amt.out{color:var(--text);} .amt.muted{color:var(--muted);}
+  .bal{font-size:14px; font-weight:500; text-align:right; white-space:nowrap; min-width:92px;}
+  .bal.neg{color:var(--red);} .bal.warn{color:var(--amber);} .bal.ok{color:var(--text-2);} .bal.paid{color:var(--muted); font-size:12px; font-weight:400;}
+  .status{font-size:12px; color:var(--muted); margin-top:14px; min-height:16px;}
+  .sectionttl{font-size:16px; font-weight:600; margin:0 0 10px;}
+  .addform{background:var(--surface-1); border-radius:12px; padding:14px; margin-bottom:16px; display:none;}
+  .addform.open{display:block;}
+  .addform .g{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px;}
+  .addform input,.addform select{font-size:13px; padding:7px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); width:100%;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cash Flow Tracker</h1>
+  <p class="sub">Import your last 3–6 months of statements. Everything stays private on this device.</p>
+
+  <!-- ============ IMPORT SCREEN ============ -->
+  <section id="importScreen">
+    <div class="drop" id="drop">
+      <h2>Drop statement files here</h2>
+      <p>or tap to choose files</p>
+      <p class="note">CSV works best (export from your bank). PDF is attempted too, but results vary by bank.</p>
+      <input type="file" id="fileInput" multiple accept=".csv,.pdf,text/csv,application/pdf" class="hide" />
+    </div>
+    <div class="filelist" id="fileList"></div>
+    <div class="btnrow">
+      <button class="btn primary" id="analyzeBtn" disabled>Analyze &amp; detect recurring</button>
+      <button class="btn" id="skipBtn">Skip — set up manually</button>
+    </div>
+    <p class="note" id="importStatus"></p>
+    <p class="note">Privacy: files are read and analyzed entirely in your browser. Nothing is uploaded to any server.</p>
+  </section>
+
+  <!-- ============ REVIEW SCREEN ============ -->
+  <section id="reviewScreen" class="hide">
+    <p class="sectionttl">Review detected recurring items</p>
+    <p class="note" style="margin-bottom:12px;">These are the repeating payments/income we found. Fix anything — the account, the next date, the amount, how often it repeats — or untick to leave it out. One-off purchases are intentionally ignored.</p>
+    <div class="tblwrap">
+      <table id="reviewTbl">
+        <thead><tr>
+          <th>Use</th><th>Name</th><th>Type</th><th>Amount</th><th>Account</th><th>Frequency</th><th>Next date</th>
+        </tr></thead>
+        <tbody id="reviewBody"></tbody>
+      </table>
+    </div>
+    <div class="btnrow">
+      <button class="btn primary" id="populateBtn">Populate tracker</button>
+      <button class="btn" id="backToImport">Back</button>
+    </div>
+    <p class="note" id="reviewStatus"></p>
+  </section>
+
+  <!-- ============ TRACKER SCREEN ============ -->
+  <section id="trackerScreen" class="hide">
+    <div class="tabs" id="tabs"></div>
+    <div class="cards">
+      <div class="card">
+        <p class="lbl" id="curLbl">Current balance</p>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size:20px; color:var(--text-2);">$</span>
+          <input id="curBal" type="number" step="0.01" />
+        </div>
+      </div>
+      <div class="card"><p class="lbl">After next payment</p><p class="big" id="afterNext">—</p><p class="cnote" id="afterNextLbl"></p></div>
+      <div class="card"><p class="lbl">Lowest point ahead</p><p class="big" id="lowPoint">—</p><p class="cnote" id="lowPointLbl"></p></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="addBtn">+ Add item</button>
+      <button class="btn" id="buffBtn">Set buffer</button>
+      <button class="btn" id="reimportBtn">Import statements</button>
+      <button class="btn danger" id="resetBtn">Reset all</button>
+    </div>
+    <div class="addform" id="addForm">
+      <div class="g">
+        <input id="nName" type="text" placeholder="Name" />
+        <input id="nAmt" type="number" step="0.01" placeholder="Amount" />
+        <select id="nType"><option value="out">Payment (out)</option><option value="in">Income (in)</option></select>
+        <select id="nFreq"><option value="monthly">Monthly</option><option value="semi">Semi-monthly</option><option value="biweekly">Biweekly</option><option value="once">One-time</option></select>
+        <input id="nDay" type="number" min="1" max="31" placeholder="Day of month" />
+        <input id="nAnchor" type="date" class="hide" />
+      </div>
+      <div class="btnrow" style="margin-top:10px; margin-bottom:0;">
+        <button class="btn" id="saveItem">Save</button>
+        <button class="btn" id="cancelItem">Cancel</button>
+      </div>
+    </div>
+    <div id="rows"></div>
+    <p class="status" id="status"></p>
+    <p class="note">Red = below $0. Amber = below your buffer. Tap a checkbox as each payment happens to mark it paid and update your balance.</p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+if (window.pdfjsLib) { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
+
+const KEY = "cashflow_multi_v1";
+const DAY = 864e5;
+const fmt = (v)=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt0 = (v)=>(v<0?"-":"")+"$"+Math.abs(Math.round(v)).toLocaleString();
+const clampDay=(y,m,d)=>{const last=new Date(y,m+1,0).getDate();return new Date(y,m,Math.min(d,last));};
+const okey=(id,dt)=>id+"@"+dt.getFullYear()+"-"+dt.getMonth()+"-"+dt.getDate();
+const iso=(d)=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const parseISO=(s)=>{const p=s.split("-");return new Date(+p[0],+p[1]-1,+p[2]);};
+
+let pending = [];        // {fileName, account, txns:[{date,desc,amt}]}
+let detected = [];       // review rows
+let state = null;        // {accounts:[], items:[], bal:{}, buffer:{}, paid:{}}
+let cur = null;
+
+/* ---------------- FILE INTAKE ---------------- */
+const drop=document.getElementById("drop"), fileInput=document.getElementById("fileInput");
+drop.onclick=()=>fileInput.click();
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
+drop.addEventListener("drop",e=>{ handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener("change",e=>handleFiles(e.target.files));
+
+function accountFromName(fn){
+  const s=fn.toLowerCase();
+  if(s.includes("rbc")||s.includes("royal")) return "RBC";
+  if(s.includes("wealth")||s.includes("wk")||s.includes("ws")) return "Wealthsimple";
+  if(s.includes("tangerine")) return "Tangerine";
+  if(s.includes("scotia")) return "Scotiabank";
+  if(s.includes("td")) return "TD";
+  if(s.includes("cibc")) return "CIBC";
+  if(s.includes("bmo")) return "BMO";
+  if(s.includes("triangle")||s.includes("mastercard")||s.includes("visa")) return "Credit Card";
+  // fallback: strip extension + digits
+  return fn.replace(/\.[^.]+$/,"").replace(/[0-9_\-]+/g," ").trim().slice(0,24) || "Account";
+}
+
+async function handleFiles(fileObjs){
+  const files=[...fileObjs];
+  for(const f of files){
+    try{
+      let txns=[];
+      if(/\.csv$/i.test(f.name)||f.type==="text/csv"){ txns=await parseCSV(f); }
+      else if(/\.pdf$/i.test(f.name)||f.type==="application/pdf"){ txns=await parsePDF(f); }
+      pending.push({fileName:f.name, account:accountFromName(f.name), txns});
+    }catch(err){ console.log("parse fail",f.name,err); pending.push({fileName:f.name, account:accountFromName(f.name), txns:[], error:true}); }
+  }
+  renderFileList();
+}
+
+function renderFileList(){
+  const el=document.getElementById("fileList"); el.innerHTML="";
+  pending.forEach((p,i)=>{
+    const div=document.createElement("div"); div.className="fileitem";
+    div.innerHTML=`<span>${p.fileName} <span class="meta">→ ${p.account} · ${p.error?'could not read':p.txns.length+' transactions'}</span></span>`;
+    const rm=document.createElement("button"); rm.className="btn"; rm.textContent="Remove";
+    rm.onclick=()=>{ pending.splice(i,1); renderFileList(); };
+    div.appendChild(rm); el.appendChild(div);
+  });
+  document.getElementById("analyzeBtn").disabled = pending.length===0;
+  const tot=pending.reduce((s,p)=>s+p.txns.length,0);
+  document.getElementById("importStatus").textContent = pending.length? (pending.length+" file(s), "+tot+" transactions read."): "";
+}
+
+/* ---------------- CSV PARSING ---------------- */
+function parseCSV(file){
+  return new Promise((resolve)=>{
+    Papa.parse(file,{header:true, skipEmptyLines:true, complete:(res)=>{
+      const rows=res.data; if(!rows.length){resolve([]);return;}
+      const cols=Object.keys(rows[0]).map(c=>c.toLowerCase().trim());
+      const find=(...names)=>{ for(const n of names){ const i=cols.findIndex(c=>c.includes(n)); if(i>=0) return Object.keys(rows[0])[i]; } return null; };
+      const cDate=find("date","posted","transaction date");
+      const cDesc=find("description","details","memo","narration","name","payee");
+      const cAmt=find("amount","value");
+      const cDebit=find("debit","withdrawal","paid out","money out");
+      const cCredit=find("credit","deposit","paid in","money in");
+      const out=[];
+      rows.forEach(r=>{
+        const dt=parseDate(cDate?r[cDate]:null); if(!dt) return;
+        let amt=0;
+        if(cAmt&&r[cAmt]!==undefined&&r[cAmt]!==""){ amt=num(r[cAmt]); }
+        else if(cDebit||cCredit){ const d=num(cDebit?r[cDebit]:0), c=num(cCredit?r[cCredit]:0); amt = c - d; }
+        if(!amt) return;
+        const desc=(cDesc?r[cDesc]:"").toString().trim() || "Transaction";
+        out.push({date:dt, desc, amt});
+      });
+      resolve(out);
+    }, error:()=>resolve([])});
+  });
+}
+function num(v){ if(v==null) return 0; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+function parseDate(s){
+  if(!s) return null; s=String(s).trim();
+  let m;
+  if((m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/))) return new Date(+m[1],+m[2]-1,+m[3]);
+  if((m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/))){ let y=+m[3]; if(y<100)y+=2000; return new Date(y,+m[1]-1,+m[2]); }
+  const months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  if((m=s.match(/([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s*(\d{4})?/i))){ const mo=months[m[1].toLowerCase()]; if(mo!=null){ return new Date(m[3]?+m[3]:2026, mo, +m[2]); } }
+  if((m=s.match(/(\d{1,2})\s+([a-z]{3})[a-z]*\.?\s*(\d{4})?/i))){ const mo=months[m[2].toLowerCase()]; if(mo!=null){ return new Date(m[3]?+m[3]:2026, mo, +m[1]); } }
+  const d=new Date(s); return isNaN(d)?null:d;
+}
+
+/* ---------------- PDF PARSING (best effort) ---------------- */
+async function parsePDF(file){
+  if(!window.pdfjsLib) return [];
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let lines=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p); const tc=await page.getTextContent();
+    // group text items by y to reconstruct lines
+    const byY={};
+    tc.items.forEach(it=>{ const y=Math.round(it.transform[5]); (byY[y]=byY[y]||[]).push(it.str); });
+    Object.keys(byY).sort((a,b)=>b-a).forEach(y=> lines.push(byY[y].join(" ")));
+  }
+  const out=[];
+  const amtRe=/(-?\$?\s?\d{1,3}(?:,\d{3})*\.\d{2})/g;
+  lines.forEach(line=>{
+    const dt=parseDate(line.slice(0,18));
+    if(!dt) return;
+    const amts=line.match(amtRe); if(!amts) return;
+    const amt=num(amts[amts.length-1]);
+    if(!amt) return;
+    const desc=line.replace(amtRe,"").replace(/^\s*[\d\/\-\.a-z, ]{6,18}/i,"").trim().slice(0,40) || "Transaction";
+    // heuristic: deposits/credits often say deposit/payroll/credit
+    const isCredit=/deposit|payroll|credit|received|refund|paid in/i.test(line);
+    out.push({date:dt, desc, amt: isCredit? Math.abs(amt) : -Math.abs(amt)});
+  });
+  return out;
+}
+
+/* ---------------- RECURRING DETECTION ---------------- */
+document.getElementById("analyzeBtn").onclick=()=>{
+  detected = detectRecurring(pending);
+  if(!detected.length){ document.getElementById("importStatus").textContent="No clearly recurring items found. You can set up manually, or check that files parsed (transaction counts above)."; }
+  renderReview();
+  show("reviewScreen");
+};
+function normDesc(d){
+  return d.toLowerCase()
+    .replace(/\b\d{2,}\b/g,"")            // strip long digit runs (store #s, ref #s)
+    .replace(/[#*].*$/,"")                // strip trailing ref codes
+    .replace(/\b(inc|ltd|corp|co|the)\b/g,"")
+    .replace(/[^a-z ]/g," ").replace(/\s+/g," ").trim();
+}
+function median(arr){ const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function detectRecurring(files){
+  const groups={}; // key: account||normDesc -> {account,name,amts:[],dates:[],sign}
+  files.forEach(f=>{
+    f.txns.forEach(t=>{
+      const nd=normDesc(t.desc); if(nd.length<3) return;
+      const key=f.account+"||"+nd;
+      const g=groups[key]||(groups[key]={account:f.account, name:cleanName(t.desc), amts:[], dates:[], sign:Math.sign(t.amt)});
+      g.amts.push(Math.abs(t.amt)); g.dates.push(t.date);
+    });
+  });
+  const rows=[];
+  Object.values(groups).forEach(g=>{
+    // recurring if appears in >=2 distinct months OR >=3 times
+    const monthsSeen=new Set(g.dates.map(d=>d.getFullYear()+"-"+d.getMonth())).size;
+    if(g.dates.length<2 || (monthsSeen<2 && g.dates.length<3)) return;
+    // amount consistency: use median; skip if wildly variable (likely groceries/dining)
+    const med=median(g.amts);
+    const within=g.amts.filter(a=>Math.abs(a-med)<=Math.max(5, med*0.15)).length;
+    if(within/g.amts.length < 0.5) return; // too variable -> not a fixed recurring bill
+    // frequency from median gap
+    const sorted=[...g.dates].sort((a,b)=>a-b);
+    const gaps=[]; for(let i=1;i<sorted.length;i++) gaps.push((sorted[i]-sorted[i-1])/DAY);
+    const g0=gaps.length?median(gaps):30;
+    let freq="monthly";
+    if(g0>=11 && g0<=17) freq="biweekly";
+    else if(g0>=25 && g0<=35) freq="monthly";
+    else if(g0<11) freq="semi";
+    const last=sorted[sorted.length-1];
+    // next date
+    let next=new Date(last);
+    const today=new Date(); today.setHours(0,0,0,0);
+    if(freq==="biweekly"){ while(next<today) next=new Date(next.getTime()+14*DAY); }
+    else { while(next<today){ next=new Date(next.getFullYear(), next.getMonth()+1, next.getDate()); } }
+    rows.push({
+      use:true, name:g.name, type: g.sign>0?"in":"out",
+      amt: Math.round(med*100)/100, account:g.account, freq,
+      day: last.getDate(), anchor: iso(last), next: iso(next),
+    });
+  });
+  // sort: income first, then by amount desc
+  rows.sort((a,b)=> (a.type===b.type? b.amt-a.amt : (a.type==="in"?-1:1)));
+  return rows;
+}
+function cleanName(d){
+  return d.replace(/\s{2,}/g," ").replace(/[#*].*$/,"").trim().replace(/\b\w/g,c=>c.toUpperCase()).slice(0,28);
+}
+
+/* ---------------- REVIEW TABLE ---------------- */
+function allAccounts(){
+  const set=new Set();
+  pending.forEach(p=>set.add(p.account));
+  detected.forEach(d=>set.add(d.account));
+  if(state) state.accounts.forEach(a=>set.add(a));
+  return [...set];
+}
+function renderReview(){
+  const body=document.getElementById("reviewBody"); body.innerHTML="";
+  const accts=allAccounts();
+  detected.forEach((r,i)=>{
+    const tr=document.createElement("tr"); if(!r.use) tr.className="rowoff";
+    tr.innerHTML=`
+      <td><input type="checkbox" ${r.use?"checked":""} data-i="${i}" class="rUse"></td>
+      <td><input type="text" value="${r.name.replace(/"/g,'&quot;')}" data-i="${i}" class="rName"></td>
+      <td><select data-i="${i}" class="rType"><option value="out"${r.type==="out"?" selected":""}>out</option><option value="in"${r.type==="in"?" selected":""}>in</option></select></td>
+      <td><input type="number" step="0.01" value="${r.amt}" data-i="${i}" class="rAmt"></td>
+      <td><select data-i="${i}" class="rAcct">${accts.map(a=>`<option ${a===r.account?"selected":""}>${a}</option>`).join("")}<option value="__new">+ new…</option></select></td>
+      <td><select data-i="${i}" class="rFreq">
+        <option value="monthly"${r.freq==="monthly"?" selected":""}>Monthly</option>
+        <option value="semi"${r.freq==="semi"?" selected":""}>Semi-monthly</option>
+        <option value="biweekly"${r.freq==="biweekly"?" selected":""}>Biweekly</option>
+        <option value="once"${r.freq==="once"?" selected":""}>One-time</option>
+      </select></td>
+      <td><input type="date" value="${r.next}" data-i="${i}" class="rNext"></td>`;
+    body.appendChild(tr);
+  });
+  body.querySelectorAll(".rUse").forEach(el=>el.onchange=e=>{detected[e.target.dataset.i].use=e.target.checked; renderReview();});
+  body.querySelectorAll(".rName").forEach(el=>el.onchange=e=>detected[e.target.dataset.i].name=e.target.value);
+  body.querySelectorAll(".rType").forEach(el=>el.onchange=e=>detected[e.target.dataset.i].type=e.target.value);
+  body.querySelectorAll(".rAmt").forEach(el=>el.onchange=e=>detected[e.target.dataset.i].amt=parseFloat(e.target.value)||0);
+  body.querySelectorAll(".rFreq").forEach(el=>el.onchange=e=>detected[e.target.dataset.i].freq=e.target.value);
+  body.querySelectorAll(".rNext").forEach(el=>el.onchange=e=>{detected[e.target.dataset.i].next=e.target.value; detected[e.target.dataset.i].anchor=e.target.value;});
+  body.querySelectorAll(".rAcct").forEach(el=>el.onchange=e=>{
+    if(e.target.value==="__new"){ const n=prompt("New account name:"); if(n){ detected[e.target.dataset.i].account=n.trim(); } renderReview(); }
+    else detected[e.target.dataset.i].account=e.target.value;
+  });
+  document.getElementById("reviewStatus").textContent = detected.length? detected.filter(r=>r.use).length+" of "+detected.length+" items will be added.": "Nothing detected — go back and set up manually.";
+}
+document.getElementById("backToImport").onclick=()=>show("importScreen");
+
+/* ---------------- POPULATE TRACKER ---------------- */
+document.getElementById("populateBtn").onclick=()=>{
+  const chosen=detected.filter(r=>r.use);
+  const accts=[...new Set(chosen.map(r=>r.account))];
+  if(!accts.length){ document.getElementById("reviewStatus").textContent="Tick at least one item, or go back and set up manually."; return; }
+  state={accounts:accts, items:[], bal:{}, buffer:{}, paid:{}};
+  accts.forEach(a=>{ state.bal[a]=0; state.buffer[a]=0; state.paid[a]=[]; });
+  chosen.forEach((r,i)=>{
+    const it={id:"i"+i+"_"+Date.now(), n:r.name, a:Math.abs(r.amt), t:r.type, freq:r.freq, account:r.account};
+    if(r.freq==="biweekly"){ it.anchor=r.anchor||r.next; }
+    else { it.day=parseISO(r.next).getDate(); }
+    state.items.push(it);
+  });
+  cur=accts[0];
+  save(); show("trackerScreen"); buildTabs(); render();
+};
+document.getElementById("skipBtn").onclick=()=>{
+  state={accounts:["Account 1"], items:[], bal:{"Account 1":0}, buffer:{"Account 1":0}, paid:{"Account 1":[]}};
+  cur="Account 1"; save(); show("trackerScreen"); buildTabs(); render();
+};
+document.getElementById("reimportBtn").onclick=()=>{ pending=[]; detected=[]; renderFileList(); show("importScreen"); };
+
+/* ---------------- TRACKER (multi-account) ---------------- */
+function show(id){ ["importScreen","reviewScreen","trackerScreen"].forEach(s=>document.getElementById(s).classList.toggle("hide", s!==id)); }
+function save(){ try{localStorage.setItem(KEY, JSON.stringify(state));}catch(e){} }
+function load(){ try{const r=localStorage.getItem(KEY); if(r){state=JSON.parse(r);} }catch(e){} }
+
+function buildTabs(){
+  const el=document.getElementById("tabs"); el.innerHTML="";
+  state.accounts.forEach(a=>{
+    const b=document.createElement("button"); b.className="tab"+(a===cur?" active":""); b.textContent=a;
+    b.onclick=()=>{ state.bal[cur]=parseFloat(document.getElementById("curBal").value)||0; cur=a; buildTabs(); syncBalInput(); render(); };
+    el.appendChild(b);
+  });
+}
+function syncBalInput(){ document.getElementById("curBal").value=(state.bal[cur]||0).toFixed(2); document.getElementById("curLbl").textContent=cur+" balance"; }
+
+function occurrencesFor(it, today, horizon){
+  const out=[]; const push=(dt)=>{ if(dt>=today&&dt<=horizon) out.push(new Date(dt)); };
+  if(it.freq==="monthly"){ for(let m=0;m<3;m++){const b=new Date(today.getFullYear(),today.getMonth()+m,1); push(clampDay(b.getFullYear(),b.getMonth(),it.day));} }
+  else if(it.freq==="semi"){ const d2=it.day<=15?it.day+15:it.day-15; const days=[Math.min(it.day,d2),Math.max(it.day,d2)];
+    for(let m=0;m<3;m++){const b=new Date(today.getFullYear(),today.getMonth()+m,1); days.forEach(dd=>push(clampDay(b.getFullYear(),b.getMonth(),dd)));} }
+  else if(it.freq==="biweekly"){ let a=it.anchor?parseISO(it.anchor):clampDay(today.getFullYear(),today.getMonth(),it.day||today.getDate()); a.setHours(0,0,0,0);
+    let c=new Date(a); if(c>today){ while(c-14*DAY>=today.getTime()) c=new Date(c.getTime()-14*DAY);} else { while(c<today) c=new Date(c.getTime()+14*DAY);}
+    for(; c<=horizon; c=new Date(c.getTime()+14*DAY)) push(c); }
+  else if(it.freq==="once"){ push(clampDay(today.getFullYear(),today.getMonth(),it.day)); }
+  return out;
+}
+function buildSchedule(items){
+  const today=new Date(); today.setHours(0,0,0,0); const horizon=new Date(today.getTime()+60*DAY);
+  const seen=new Set(); let occ=[];
+  items.forEach(it=> occurrencesFor(it,today,horizon).forEach(dt=>{ const k=okey(it.id,dt); if(seen.has(k))return; seen.add(k);
+    occ.push({id:it.id,key:k,n:it.n,a:it.a,t:it.t,freq:it.freq,date:dt}); }));
+  occ.sort((a,b)=> a.date-b.date || (a.t==="in"?-1:1) || a.n.localeCompare(b.n));
+  return occ;
+}
+function render(){
+  if(!state) return;
+  state.bal[cur]=parseFloat(document.getElementById("curBal").value)||0;
+  const buffer=state.buffer[cur]||0; const paid=new Set(state.paid[cur]||[]);
+  const items=state.items.filter(it=>it.account===cur);
+  const sched=buildSchedule(items);
+  let bal=state.bal[cur], low=bal, lowDate=null, firstAfter=null, firstName="";
+  let html=""; let lastMonth="";
+  sched.forEach(o=>{
+    const isPaid=paid.has(o.key);
+    if(!isPaid){ bal+=(o.t==="in"?o.a:-o.a); if(firstAfter===null){firstAfter=bal;firstName=o.n;} if(bal<low){low=bal;lowDate=o.date;} }
+    const mo=o.date.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+    if(mo!==lastMonth){ html+='<div class="monthhdr">'+mo+'</div>'; lastMonth=mo; }
+    const dstr=o.date.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+    const isIn=o.t==="in"; const short=(!isPaid)&&bal<buffer;
+    const balCls=isPaid?"paid":(bal<0?"neg":(short?"warn":"ok"));
+    const balTxt=isPaid?"paid":(fmt0(bal)+(bal<0?" !":(short?" *":"")));
+    html+='<div class="row '+(isPaid?'paid':'')+'">'+
+      '<button class="chk '+(isPaid?'on':'')+'" data-key="'+o.key+'" data-id="'+o.id+'">✓</button>'+
+      '<div style="min-width:0;"><div class="nm '+(isPaid?'paid':'')+'">'+o.n+'</div><div class="dt">'+dstr+'</div></div>'+
+      '<div class="amt '+(isPaid?'muted':(isIn?'in':'out'))+'">'+(isIn?"+":"−")+fmt(o.a)+'</div>'+
+      '<div class="bal '+balCls+'">'+balTxt+'</div></div>';
+  });
+  document.getElementById("rows").innerHTML = html || '<p style="color:var(--muted); font-size:14px; padding:12px 0;">No upcoming items for this account.</p>';
+  const af=document.getElementById("afterNext"); af.textContent=firstAfter===null?"—":fmt0(firstAfter);
+  af.style.color=firstAfter===null?"var(--text)":(firstAfter<0?"var(--red)":(firstAfter<buffer?"var(--amber)":"var(--text)"));
+  document.getElementById("afterNextLbl").textContent=firstName?("after "+firstName):"all upcoming paid";
+  const lp=document.getElementById("lowPoint"); lp.textContent=fmt0(low);
+  lp.style.color=low<0?"var(--red)":(low<buffer?"var(--amber)":"var(--text)");
+  document.getElementById("lowPointLbl").textContent=lowDate?("on "+lowDate.toLocaleDateString(undefined,{month:"short",day:"numeric"})+(low<buffer?(low<0?" — overdraft!":" — below buffer"):"")):"next 60 days";
+  document.querySelectorAll(".chk").forEach(b=>{
+    b.onclick=()=>{
+      const it=state.items.find(x=>x.id===b.dataset.id); if(!it)return;
+      const pset=new Set(state.paid[cur]||[]); const key=b.dataset.key;
+      if(pset.has(key)){ pset.delete(key); state.bal[cur]=(parseFloat(document.getElementById("curBal").value)||0)-(it.t==="in"?it.a:-it.a); }
+      else { pset.add(key); state.bal[cur]=(parseFloat(document.getElementById("curBal").value)||0)+(it.t==="in"?it.a:-it.a); }
+      state.paid[cur]=[...pset]; document.getElementById("curBal").value=state.bal[cur].toFixed(2); save(); render();
+    };
+  });
+  save();
+}
+document.getElementById("curBal").addEventListener("input", render);
+document.getElementById("addBtn").onclick=()=>document.getElementById("addForm").classList.toggle("open");
+document.getElementById("cancelItem").onclick=()=>document.getElementById("addForm").classList.remove("open");
+document.getElementById("nFreq").addEventListener("change",function(){ document.getElementById("nAnchor").classList.toggle("hide",this.value!=="biweekly"); document.getElementById("nDay").classList.toggle("hide",this.value==="biweekly"); });
+document.getElementById("saveItem").onclick=()=>{
+  const n=document.getElementById("nName").value.trim(); const a=parseFloat(document.getElementById("nAmt").value);
+  if(!n||isNaN(a)){ document.getElementById("status").textContent="Enter a name and amount."; return; }
+  const freq=document.getElementById("nFreq").value;
+  const it={id:"u"+Date.now(), n, a:Math.abs(a), t:document.getElementById("nType").value, freq, account:cur};
+  if(freq==="biweekly"){ const anc=document.getElementById("nAnchor").value; if(!anc){document.getElementById("status").textContent="Biweekly needs an anchor date."; return;} it.anchor=anc; }
+  else { it.day=parseInt(document.getElementById("nDay").value)||new Date().getDate(); }
+  state.items.push(it);
+  document.getElementById("nName").value=""; document.getElementById("nAmt").value=""; document.getElementById("nDay").value=""; document.getElementById("nAnchor").value="";
+  document.getElementById("addForm").classList.remove("open"); save(); render();
+};
+document.getElementById("buffBtn").onclick=()=>{
+  const v=prompt("Safety buffer for "+cur+" — warn when balance would drop below this:", String(state.buffer[cur]||0));
+  if(v!==null){ state.buffer[cur]=parseFloat(v)||0; save(); render(); }
+};
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("Erase everything and start over? This clears all accounts, items, and balances on this device.")){
+    localStorage.removeItem(KEY); state=null; pending=[]; detected=[]; renderFileList(); show("importScreen");
+  }
+};
+
+/* ---------------- BOOT ---------------- */
+load();
+if(state && state.accounts && state.accounts.length){ cur=state.accounts[0]; show("trackerScreen"); buildTabs(); syncBalInput(); render(); }
+else { show("importScreen"); }
+
+if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{})); }
+</script>
+</body>
+</html>
