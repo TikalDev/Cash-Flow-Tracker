@@ -84,6 +84,8 @@
   .draweritem{display:block; width:100%; text-align:left; background:none; border:none; padding:11px 10px; font-size:15px; color:var(--text); cursor:pointer; border-radius:8px;}
   .draweritem:hover{background:var(--surface-1);}
   .draweritem.danger{color:var(--red);}
+  .horizonopt{flex:1; font-size:13px; padding:8px 4px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); cursor:pointer;}
+  .horizonopt.active{border-color:var(--accent); color:var(--text); font-weight:600; background:#f0f6fe;}
   .msum{background:var(--surface-1); border-radius:12px; padding:12px 14px; margin-bottom:14px;}
   .msum h3{font-size:13px; color:var(--text-2); margin:0 0 8px; font-weight:600;}
   .msrow{display:grid; grid-template-columns:1fr auto auto auto; gap:10px; align-items:baseline; padding:5px 0; border-bottom:1px solid var(--border); font-size:13px;}
@@ -140,11 +142,17 @@
   <button class="draweritem" id="reimportBtn">Import statements</button>
   <button class="draweritem" id="backupBtn">Back up my data</button>
   <button class="draweritem" id="restoreBtn">Restore from backup</button>
+  <p class="drawerhdr">Forecast window</p>
+  <div style="display:flex; gap:6px; padding:2px 10px 4px;">
+    <button class="horizonopt" data-days="30">30 days</button>
+    <button class="horizonopt" data-days="60">60 days</button>
+    <button class="horizonopt" data-days="90">90 days</button>
+  </div>
   <p class="drawerhdr">Feedback</p>
   <button class="draweritem" id="feedbackBtn">Send feedback / request a feature</button>
   <p class="drawerhdr">Start over</p>
   <button class="draweritem danger" id="resetBtn">Reset all</button>
-  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v20</span></p>
+  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v23</span></p>
 </nav>
 
 <!-- Sign-in modal -->
@@ -265,8 +273,9 @@ let currentUser=null, syncing=false, autoSyncTimer=null;
 let lastSyncedUpdated=0; // the state.updated value at our last successful push/pull (this device's "clean" marker)
 
 const KEY = "cashflow_multi_v1";
-const APP_VERSION = "v20";
+const APP_VERSION = "v23";
 const DAY = 864e5;
+let horizonDays = (()=>{ const v=parseInt(localStorage.getItem("cf_horizon")); return (v===30||v===60||v===90)? v : 60; })();
 const fmt = (v)=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmt0 = (v)=>(v<0?"-":"")+"$"+Math.abs(Math.round(v)).toLocaleString();
 const clampDay=(y,m,d)=>{const last=new Date(y,m+1,0).getDate();return new Date(y,m,Math.min(d,last));};
@@ -535,6 +544,8 @@ document.getElementById("populateBtn").onclick=()=>{
     const it={id:"i"+i+"_"+Date.now(), n:r.name, a:Math.abs(r.amt), t:r.type, freq:r.freq, account:r.account};
     if(r.freq==="biweekly"||r.freq==="weekly"){ it.anchor=r.anchor||r.next; }
     else { it.day=parseISO(r.next).getDate(); }
+    // start from the next detected occurrence so imports don't backfill old dates
+    if(r.next) it.start=r.next;
     state.items.push(it);
   });
   cur=cur && state.accounts.includes(cur) ? cur : accts[0];
@@ -653,44 +664,42 @@ async function pullFromCloud(opts){
     const { data, error } = await sb.from("app_data").select("data,updated_at").eq("id",CLOUD_ROW_ID).maybeSingle();
     if(error) throw error;
     if(!data || !data.data){
+      // nothing in the cloud yet -> only push up if we actually have data
       if(state && state.accounts && state.accounts.length){ await pushToCloud(false); }
       return;
     }
     const cloud=data.data;
     const cloudUpdated = cloud.updated || Date.parse(data.updated_at) || 0;
     const localUpdated = (state && state.updated) || 0;
-    const cloudHasData = cloud.accounts && cloud.accounts.length;
-    const localHasData = state && state.accounts && state.accounts.length;
-    // has THIS device made edits since its last successful sync?
+    const cloudHasData = !!(cloud.accounts && cloud.accounts.length);
+    const localHasData = !!(state && state.accounts && state.accounts.length);
+    const localItemCount = (state && state.items) ? state.items.length : 0;
     const localDirty = localUpdated > lastSyncedUpdated;
 
-    if(!localHasData && cloudHasData){ applyCloud(cloud); return; }
+    // SAFETY: a device with no data (or an empty shell) must NEVER overwrite a populated cloud.
+    // Always load the cloud copy in that case.
+    if(cloudHasData && !localHasData){ applyCloud(cloud); return; }
+
+    // SAFETY: local has "accounts" but no items at all, while cloud is populated ->
+    // treat local as effectively empty; load the cloud (this catches the fresh-device
+    // "Skip / manual" shell and the just-imported-but-not-really case).
+    if(cloudHasData && localItemCount===0 && cloud.items && cloud.items.length){ applyCloud(cloud); return; }
 
     if(cloudHasData && cloudUpdated > localUpdated){
-      // cloud is newer than us
-      if(!localDirty){
-        // we have no unsynced local edits -> safe to load cloud silently
-        applyCloud(cloud);
-        return;
-      }
-      // BOTH sides changed since last sync = genuine conflict -> ask
+      if(!localDirty){ applyCloud(cloud); return; }
       const when = new Date(cloudUpdated).toLocaleString();
       if(opts.background){
-        // gently prompt on return-to-app
         if(confirm("Heads up: the synced copy (saved "+when+") changed on another device, and you've also made changes here.\n\nOK = load the synced copy (discards this device's unsaved changes).\nCancel = keep this device's copy and push it up.")){
           applyCloud(cloud);
-        } else {
-          await pushToCloud(false);
-        }
+        } else { await pushToCloud(false); }
       } else {
         if(confirm("The synced copy (last saved "+when+") is newer than what's on this device.\n\nOK = load the synced copy.\nCancel = keep this device's copy.")){
           applyCloud(cloud);
-        } else {
-          await pushToCloud(false);
-        }
+        } else { await pushToCloud(false); }
       }
     } else {
-      // we're newer or equal -> push up if we have data
+      // local is newer or equal. Only push up if local actually has data,
+      // AND we're not about to clobber a populated cloud with a smaller/empty local.
       if(localHasData) await pushToCloud(true);
     }
   }catch(e){ console.log("pull failed",e); if(!opts.background) setSyncStatus("Sync check failed","var(--red)"); }
@@ -714,7 +723,48 @@ async function doSignIn(email, pass){
   currentUser=data.user;
   document.getElementById("signInModal").classList.remove("open");
   refreshSyncUI();
-  await pullFromCloud({});
+  await firstSyncAfterSignIn();
+}
+// Special handling right after sign-in: look at the cloud BEFORE any push,
+// so a fresh/empty device can never overwrite existing cloud data.
+async function firstSyncAfterSignIn(){
+  if(!currentUser||!sb) return;
+  try{
+    setSyncStatus("Checking cloud…","var(--amber)");
+    const { data, error } = await sb.from("app_data").select("data,updated_at").eq("id",CLOUD_ROW_ID).maybeSingle();
+    if(error) throw error;
+    const cloud = data && data.data ? data.data : null;
+    const cloudHasData = !!(cloud && cloud.accounts && cloud.accounts.length);
+    const localHasData = !!(state && state.accounts && state.accounts.length);
+    const localItemCount = (state && state.items) ? state.items.length : 0;
+
+    if(cloudHasData && (!localHasData || localItemCount===0)){
+      // fresh/empty device, cloud has real data -> load it, no question (this is the safe default)
+      applyCloud(cloud);
+      document.getElementById("status").textContent="Loaded your synced data from the cloud.";
+      return;
+    }
+    if(cloudHasData && localHasData){
+      // both sides have data -> ask which to keep, never silently overwrite
+      const when = data.updated_at ? new Date(Date.parse(data.updated_at)).toLocaleString() : "previously";
+      if(confirm("This device already has data, and there's also a synced copy in the cloud (saved "+when+").\n\nOK = load the cloud copy (replaces what's on this device).\nCancel = keep this device's data and upload it (replaces the cloud copy).")){
+        applyCloud(cloud);
+        document.getElementById("status").textContent="Loaded the cloud copy.";
+      } else {
+        await pushToCloud(false);
+        document.getElementById("status").textContent="Uploaded this device's data to the cloud.";
+      }
+      return;
+    }
+    if(!cloudHasData && localHasData){
+      // cloud empty, we have data -> safe to seed the cloud
+      await pushToCloud(false);
+      document.getElementById("status").textContent="Uploaded this device's data to the cloud.";
+      return;
+    }
+    // neither has data -> nothing to do
+    refreshSyncUI();
+  }catch(e){ console.log("first sync failed",e); setSyncStatus("Sync check failed","var(--red)"); }
 }
 async function doSignOut(){
   if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
@@ -742,9 +792,11 @@ function buildTabs(){
 function syncBalInput(){ document.getElementById("curBal").value=(state.bal[cur]||0).toFixed(2); document.getElementById("curLbl").textContent=cur+" balance"; }
 
 function occurrencesFor(it, today, horizon, back){
-  // back = earliest date to include (today minus lookback). Past occurrences after `back`
-  // are included so a missed/late item stays visible until checked off or dismissed.
-  const start = back || today;
+  // Earliest date we include. `back` gives the 40-day lookback for keeping missed items
+  // visible, but never earlier than the item's own start date (so a brand-new item
+  // doesn't backfill fake "overdue" occurrences from before it existed).
+  let start = back || today;
+  if(it.start){ const s=parseISO(it.start); s.setHours(0,0,0,0); if(s>start) start=s; }
   const out=[]; const push=(dt)=>{ if(dt>=start&&dt<=horizon) out.push(new Date(dt)); };
   if(it.freq==="monthly"){ for(let m=-2;m<3;m++){const b=new Date(today.getFullYear(),today.getMonth()+m,1); push(clampDay(b.getFullYear(),b.getMonth(),it.day));} }
   else if(it.freq==="semi"){ const d2=it.day<=15?it.day+15:it.day-15; const days=[Math.min(it.day,d2),Math.max(it.day,d2)];
@@ -759,7 +811,7 @@ function occurrencesFor(it, today, horizon, back){
   return out;
 }
 function buildSchedule(items){
-  const today=new Date(); today.setHours(0,0,0,0); const horizon=new Date(today.getTime()+60*DAY);
+  const today=new Date(); today.setHours(0,0,0,0); const horizon=new Date(today.getTime()+horizonDays*DAY);
   const back=new Date(today.getTime()-40*DAY); // keep recently-missed items visible
   const dismissed=new Set(state.dismissed && state.dismissed[cur] ? state.dismissed[cur] : []);
   const seen=new Set(); let occ=[];
@@ -812,7 +864,7 @@ function render(){
   document.getElementById("afterNextLbl").textContent=firstName?("after "+firstName):"all upcoming paid";
   const lp=document.getElementById("lowPoint"); lp.textContent=fmt0(low);
   lp.style.color=low<0?"var(--red)":(low<buffer?"var(--amber)":"var(--text)");
-  document.getElementById("lowPointLbl").textContent=lowDate?("on "+lowDate.toLocaleDateString(undefined,{month:"short",day:"numeric"})+(low<buffer?(low<0?" — overdraft!":" — below buffer"):"")):"next 60 days";
+  document.getElementById("lowPointLbl").textContent=lowDate?("on "+lowDate.toLocaleDateString(undefined,{month:"short",day:"numeric"})+(low<buffer?(low<0?" — overdraft!":" — below buffer"):"")):("next "+horizonDays+" days");
   document.querySelectorAll(".chk").forEach(b=>{
     b.onclick=()=>{
       const it=state.items.find(x=>x.id===b.dataset.id); if(!it)return;
@@ -865,7 +917,7 @@ function renderMonthSummary(paidCurrent){
       '<button class="mstab '+(summaryScope==="current"?"active":"")+'" data-scope="current">This account</button>'+
       '<button class="mstab '+(summaryScope==="all"?"active":"")+'" data-scope="all">All combined</button></div>'+
       '<div class="mshead"><span>Month</span><span>In</span><span>Out</span><span>Net</span></div>';
-    if(!keys.length){ h+='<p class="mspaid" style="padding:6px 0;">No items in the next 60 days.</p>'; }
+    if(!keys.length){ h+='<p class="mspaid" style="padding:6px 0;">No items in the next '+horizonDays+' days.</p>'; }
     keys.forEach(k=>{
       const m=months[k];
       const inc=m.incP+m.incR, exp=m.expP+m.expR, net=inc-exp;
@@ -951,17 +1003,17 @@ document.getElementById("saveItem").onclick=()=>{
   if(!n||isNaN(a)){ document.getElementById("status").textContent="Enter a name and amount."; return; }
   const freq=document.getElementById("nFreq").value;
   const fields={ n, a:Math.abs(a), t:document.getElementById("nType").value, freq, account:cur };
-  if(freq==="biweekly"||freq==="weekly"){ const anc=document.getElementById("nAnchor").value; if(!anc){document.getElementById("status").textContent=(freq==="weekly"?"Weekly":"Biweekly")+" needs an anchor date."; return;} fields.anchor=anc; fields.day=undefined; }
+  if(freq==="biweekly"||freq==="weekly"){ const anc=document.getElementById("nAnchor").value; if(!anc){document.getElementById("status").textContent=(freq==="weekly"?"Weekly":"Biweekly")+" needs an anchor date."; return;} fields.anchor=anc; fields.day=undefined; fields.start=anc; }
   else {
     const dv=document.getElementById("nDate").value;
-    if(dv){ fields.day=parseISO(dv).getDate(); }
-    else { fields.day=parseInt(document.getElementById("nDay").value)||new Date().getDate(); }
+    if(dv){ fields.day=parseISO(dv).getDate(); fields.start=dv; }
+    else { fields.day=parseInt(document.getElementById("nDay").value)||new Date().getDate(); fields.start=iso(new Date()); }
     fields.anchor=undefined;
   }
   snapshot(editingId?"edit":"add");
   if(editingId){
     const it=state.items.find(x=>x.id===editingId);
-    if(it){ it.n=fields.n; it.a=fields.a; it.t=fields.t; it.freq=fields.freq; it.day=fields.day; it.anchor=fields.anchor; }
+    if(it){ it.n=fields.n; it.a=fields.a; it.t=fields.t; it.freq=fields.freq; it.day=fields.day; it.anchor=fields.anchor; if(fields.start) it.start=fields.start; }
     document.getElementById("status").textContent="Updated "+fields.n+".";
   } else {
     state.items.push({id:"u"+Date.now(), ...fields});
@@ -1032,6 +1084,21 @@ document.getElementById("siPass").addEventListener("keydown",e=>{ if(e.key==="En
 document.getElementById("syncNowBtn").onclick=async()=>{ closeDrawer(); await pullFromCloud({}); if(currentUser) await pushToCloud(false); };
 document.getElementById("signOutBtn").onclick=()=>{ closeDrawer(); doSignOut(); };
 
+function refreshHorizonUI(){
+  document.querySelectorAll(".horizonopt").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.days)===horizonDays);
+  });
+}
+document.querySelectorAll(".horizonopt").forEach(b=>{
+  b.onclick=()=>{
+    horizonDays=parseInt(b.dataset.days)||60;
+    try{ localStorage.setItem("cf_horizon", String(horizonDays)); }catch(e){}
+    refreshHorizonUI();
+    if(state && state.accounts && state.accounts.length){ render(); }
+    document.getElementById("status") && (document.getElementById("status").textContent="Forecast window: "+horizonDays+" days.");
+  };
+});
+
 document.getElementById("menuBtn").onclick=openDrawer;
 document.getElementById("drawerClose").onclick=closeDrawer;
 document.getElementById("drawerScrim").onclick=closeDrawer;
@@ -1054,6 +1121,7 @@ load();
 if(state && state.accounts && state.accounts.length){ let saved=null; try{saved=localStorage.getItem("cf_curAcct");}catch(e){} cur=(saved && state.accounts.includes(saved))? saved : state.accounts[0]; show("trackerScreen"); buildTabs(); syncBalInput(); render(); }
 else { show("importScreen"); }
 refreshSyncUI();
+refreshHorizonUI();
 initAuth();
 
 if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{})); }
