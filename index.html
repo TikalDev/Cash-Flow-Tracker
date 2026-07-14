@@ -139,6 +139,7 @@
   <p class="drawerhdr">Account</p>
   <button class="draweritem" id="renameAcctBtn">Rename account</button>
   <button class="draweritem" id="delAcctBtn">Delete account</button>
+  <button class="draweritem" id="odDrawerBtn">Overdraft settings</button>
   <p class="drawerhdr">Data</p>
   <button class="draweritem" id="reimportBtn">Import statements</button>
   <button class="draweritem" id="backupBtn">Back up my data</button>
@@ -153,7 +154,7 @@
   <button class="draweritem" id="feedbackBtn">Send feedback / request a feature</button>
   <p class="drawerhdr">Start over</p>
   <button class="draweritem danger" id="resetBtn">Reset all</button>
-  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v26</span></p>
+  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v27</span></p>
 </nav>
 
 <!-- Sign-in modal -->
@@ -225,12 +226,11 @@
       </div>
       <div class="card"><p class="lbl">After next payment</p><p class="big" id="afterNext">—</p><p class="cnote" id="afterNextLbl"></p></div>
       <div class="card"><p class="lbl">Lowest point ahead</p><p class="big" id="lowPoint">—</p><p class="cnote" id="lowPointLbl"></p></div>
-      <div class="card hide" id="odCard"><p class="lbl">Overdraft room</p><p class="big" id="odRemain">—</p><p class="cnote" id="odNote"></p></div>
+      <div class="card hide" id="odCard"><p class="lbl">Overdraft room after next</p><p class="big" id="odRemain">—</p><p class="cnote" id="odNote"></p></div>
     </div>
     <div class="btnrow">
       <button class="btn" id="addBtn">+ Add item</button>
       <button class="btn" id="buffBtn">Set buffer</button>
-      <button class="btn" id="odBtn">Overdraft</button>
       <button class="btn hide" id="undoBtn">↶ Undo</button>
       <input type="file" id="restoreFile" accept=".json,application/json" class="hide" />
     </div>
@@ -276,7 +276,7 @@ let currentUser=null, syncing=false, autoSyncTimer=null;
 let lastSyncedUpdated=0; // the state.updated value at our last successful push/pull (this device's "clean" marker)
 
 const KEY = "cashflow_multi_v1";
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 const DAY = 864e5;
 let horizonDays = (()=>{ const v=parseInt(localStorage.getItem("cf_horizon")); return (v===30||v===60||v===90)? v : 60; })();
 const fmt = (v)=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -981,17 +981,18 @@ function render(){
     }
   }
   document.getElementById("lowPointLbl").textContent=lowNote;
-  // Overdraft card: big number = lowest room ahead (the danger figure)
+  // Overdraft card: big number = room AFTER NEXT PAYMENT; note carries the lowest-point figure
   const odCard=document.getElementById("odCard");
   if(od.on){
     odCard.classList.remove("hide");
+    const afterRoom = (firstRoom===null? room : firstRoom); // room right after the next upcoming item
     const odRemain=document.getElementById("odRemain");
-    odRemain.textContent = (lowRoom<0? "-"+fmt0(Math.abs(lowRoom)) : fmt0(lowRoom));
-    const rcls=classifyRoom(lowRoom);
-    odRemain.style.color = rcls==="neg"?"var(--red)":(rcls==="warn"?"var(--amber)":"var(--green)");
+    odRemain.textContent = (afterRoom<0? "-"+fmt0(Math.abs(afterRoom)) : fmt0(afterRoom));
+    const acls=classifyRoom(afterRoom);
+    odRemain.style.color = acls==="neg"?"var(--red)":(acls==="warn"?"var(--amber)":"var(--green)");
     let note;
-    if(lowRoom<=0) note="OVER limit by "+fmt0(Math.abs(lowRoom))+" at lowest point";
-    else note="lowest room ahead • "+fmt0(od.avail)+" available now";
+    if(lowRoom<=0) note="lowest ahead: OVER limit by "+fmt0(Math.abs(lowRoom));
+    else note="lowest ahead: "+fmt0(lowRoom)+" room";
     document.getElementById("odNote").textContent=note;
   } else {
     odCard.classList.add("hide");
@@ -1156,7 +1157,8 @@ document.getElementById("buffBtn").onclick=()=>{
   const v=prompt("Safety buffer for "+cur+" — warn when balance would drop below this:", String(state.buffer[cur]||0));
   if(v!==null){ state.buffer[cur]=parseFloat(v)||0; save(); render(); }
 };
-document.getElementById("odBtn").onclick=()=>{
+document.getElementById("odDrawerBtn").onclick=()=>{
+  closeDrawer();
   if(!state.od) state.od={};
   const cur0=state.od[cur]||{on:false,limit:0,avail:0,warn:0};
   const turnOn=confirm("Overdraft protection for "+cur+"\n\nOK = turn ON (enter limit, current available, and a low-room warning level).\nCancel = turn OFF for this account.");
