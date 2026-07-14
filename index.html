@@ -154,7 +154,7 @@
   <button class="draweritem" id="feedbackBtn">Send feedback / request a feature</button>
   <p class="drawerhdr">Start over</p>
   <button class="draweritem danger" id="resetBtn">Reset all</button>
-  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v28</span></p>
+  <p style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted);">Cash Flow Tracker <span id="verNum">v29</span></p>
 </nav>
 
 <!-- Sign-in modal -->
@@ -276,7 +276,7 @@ let currentUser=null, syncing=false, autoSyncTimer=null;
 let lastSyncedUpdated=0; // the state.updated value at our last successful push/pull (this device's "clean" marker)
 
 const KEY = "cashflow_multi_v1";
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 const DAY = 864e5;
 let horizonDays = (()=>{ const v=parseInt(localStorage.getItem("cf_horizon")); return (v===30||v===60||v===90)? v : 60; })();
 const fmt = (v)=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -863,7 +863,10 @@ function buildTabs(){
   });
 }
 function syncBalInput(){ document.getElementById("curBal").value=(state.bal[cur]||0).toFixed(2); document.getElementById("curLbl").textContent=cur+" balance"; }
-function odFor(acct){ const o=(state.od&&state.od[acct])?state.od[acct]:null; return (o&&o.on)? {on:true, limit:+o.limit||0, avail:(o.avail!==undefined?+o.avail:(+o.limit||0)), warn:+o.warn||0} : {on:false, limit:0, avail:0, warn:0}; }
+function odFor(acct){ const o=(state.od&&state.od[acct])?state.od[acct]:null; return (o&&o.on)? {on:true, limit:+o.limit||0, avail:(o.avail!==undefined?+o.avail:(+o.limit||0)), warn:+o.warn||0, anchorBal:(o.anchorBal!==undefined?+o.anchorBal:0)} : {on:false, limit:0, avail:0, warn:0, anchorBal:0}; }
+// Room is DERIVED from balance via the anchor, so the two can never drift:
+// room = avail + (balance - anchorBal), capped at the limit.
+function roomAt(od, bal){ return Math.min(od.limit, od.avail + (bal - od.anchorBal)); }
 
 function occurrencesFor(it, today, horizon, back){
   // Earliest date we include. `back` gives the 40-day lookback for keeping missed items
@@ -905,11 +908,8 @@ function render(){
   const sched=buildSchedule(items);
   const query=(document.getElementById("searchBox").value||"").trim().toLowerCase();
   let bal=state.bal[cur], low=bal, lowDate=null, firstAfter=null, firstName="";
-  // Overdraft room is a SEPARATE running number, anchored to the available you entered.
-  // It moves with the same transactions as the balance, capped at the limit, and is the
-  // authoritative "will my overdraft cover me" figure. lowRoom = worst (lowest) room ahead.
-  let room = od.on ? od.avail : 0;
-  let lowRoom = room, firstRoom = null;
+  // Room is DERIVED from balance (room = roomAt(od,bal)), so balance and room can never drift.
+  let lowRoom = od.on ? roomAt(od,bal) : 0, firstRoom = null;
   let html=""; let overdueHtml=""; let lastMonth="";
   // classify by ROOM when overdraft on (room<=0 red, room<warn amber), else by balance+buffer
   const classifyRoom=(r)=>{
@@ -924,10 +924,11 @@ function render(){
   };
   sched.forEach(o=>{
     const isPaid=paid.has(o.key);
+    let room = od.on ? roomAt(od,bal) : 0;
     if(!isPaid){
       const delta=(o.t==="in"?o.a:-o.a);
       bal+=delta;
-      if(od.on){ room=Math.min(od.limit, room+delta); if(firstRoom===null) firstRoom=room; if(room<lowRoom){lowRoom=room;} }
+      if(od.on){ room=roomAt(od,bal); if(firstRoom===null) firstRoom=room; if(room<lowRoom){lowRoom=room;} }
       if(firstAfter===null){firstAfter=bal;firstName=o.n;}
       if(bal<low){low=bal;lowDate=o.date;}
     }
@@ -935,7 +936,7 @@ function render(){
     const isIn=o.t==="in";
     const cls = isPaid ? "paid" : (od.on ? classifyRoom(room) : classifyBal(bal));
     const flag = cls==="neg" ? " !" : (cls==="warn" ? " *" : "");
-    // show BOTH balance and room (when overdraft on)
+    // main number = bank balance; small note = derived room counting down
     let balTxt;
     if(isPaid) balTxt="paid";
     else if(od.on) balTxt=fmt0(bal)+'<span class="roomsub">room '+(room<0?"-"+fmt0(Math.abs(room)):fmt0(room))+flag+'</span>';
@@ -964,7 +965,7 @@ function render(){
   const colorFor=(cls)=> cls==="neg"?"var(--red)":(cls==="warn"?"var(--amber)":"var(--text)");
   // After next payment: color by room if overdraft on
   const af=document.getElementById("afterNext"); af.textContent=firstAfter===null?"—":fmt0(firstAfter);
-  af.style.color=firstAfter===null?"var(--text)":colorFor(od.on? classifyRoom(firstRoom===null?room:firstRoom) : classifyBal(firstAfter));
+  af.style.color=firstAfter===null?"var(--text)":colorFor(od.on? classifyRoom(firstRoom===null?roomAt(od,state.bal[cur]):firstRoom) : classifyBal(firstAfter));
   document.getElementById("afterNextLbl").textContent=firstName?("after "+firstName):"all upcoming paid";
   // Lowest point: show balance, color by room if overdraft on
   const lp=document.getElementById("lowPoint"); lp.textContent=fmt0(low);
@@ -985,7 +986,7 @@ function render(){
   const odCard=document.getElementById("odCard");
   if(od.on){
     odCard.classList.remove("hide");
-    const afterRoom = (firstRoom===null? room : firstRoom); // room right after the next upcoming item
+    const afterRoom = (firstRoom===null? roomAt(od,state.bal[cur]) : firstRoom); // room right after the next upcoming item
     const odRemain=document.getElementById("odRemain");
     odRemain.textContent = (afterRoom<0? "-"+fmt0(Math.abs(afterRoom)) : fmt0(afterRoom));
     const acls=classifyRoom(afterRoom);
@@ -1001,20 +1002,13 @@ function render(){
     b.onclick=()=>{
       const it=state.items.find(x=>x.id===b.dataset.id); if(!it)return;
       const pset=new Set(state.paid[cur]||[]); const key=b.dataset.key;
-      const delta=(it.t==="in"?it.a:-it.a); // effect on balance/room when marking paid
+      const delta=(it.t==="in"?it.a:-it.a);
       const curBalNow=parseFloat(document.getElementById("curBal").value)||0;
-      const odc=(state.od&&state.od[cur]&&state.od[cur].on)?state.od[cur]:null;
-      if(pset.has(key)){
-        // UN-check: reverse it
-        pset.delete(key);
-        state.bal[cur]=curBalNow-delta;
-        if(odc){ odc.avail=Math.min(odc.limit, (+odc.avail||0)-delta); }
-      } else {
-        // check as paid: apply it to balance AND overdraft room
-        pset.add(key);
-        state.bal[cur]=curBalNow+delta;
-        if(odc){ odc.avail=Math.min(odc.limit, (+odc.avail||0)+delta); }
-      }
+      // Only the balance moves. Overdraft room is derived from balance (roomAt), so it
+      // updates automatically, and the anchor is NOT changed here (checking off doesn't
+      // re-baseline your available; it just moves the balance the room is measured from).
+      if(pset.has(key)){ pset.delete(key); state.bal[cur]=curBalNow-delta; }
+      else { pset.add(key); state.bal[cur]=curBalNow+delta; }
       state.paid[cur]=[...pset]; document.getElementById("curBal").value=state.bal[cur].toFixed(2); save(); render();
     };
   });
@@ -1184,7 +1178,10 @@ document.getElementById("odDrawerBtn").onclick=()=>{
   const wv=prompt("Warn me (amber) when room drops below this amount:", String(cur0.warn||Math.round(limit*0.1)));
   if(wv===null) return;
   const warn=Math.abs(parseFloat(wv)||0);
-  state.od[cur]={on:true, limit, avail, warn};
+  // anchor: record the balance at the moment you set the available room, so room
+  // stays locked to balance (room = avail + (balance - anchorBal), capped at limit).
+  const anchorBal=parseFloat(document.getElementById("curBal").value)||0;
+  state.od[cur]={on:true, limit, avail, warn, anchorBal};
   save(); render();
   document.getElementById("status").textContent="Overdraft on for "+cur+": "+fmt0(avail)+" room of "+fmt0(limit)+", warn under "+fmt0(warn)+".";
 };
